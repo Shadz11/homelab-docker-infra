@@ -1,0 +1,91 @@
+# =============================================================================
+# Self-Hosted Private Cloud & Backup Homelab — Declarative Docker Stack
+# =============================================================================
+# Architecture Highlights:
+# - Primary: Containerized Private Cloud Storage (Nextcloud) & NAS File Sharing
+#   (Samba) for automated family device sync & backup (files, documents, photos)
+# - Security: Isolated Bridge Networking (homelab_net) behind a Zero-Trust VPN
+#   gateway (zero open router ports), strict PUID/PGID least-privilege mapping,
+#   and read-only (:ro) volume protection flags where write access isn't needed
+# - Bonus Household Service: Local Media Streaming (Jellyfin) with VA-API /
+#   Intel QuickSync (/dev/dri) hardware transcoding passthrough
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Primary Service: Private Cloud Storage & Automated Device Sync
+  # ---------------------------------------------------------------------------
+  nextcloud:
+    image: lscr.io/linuxserver/nextcloud:latest
+    container_name: nextcloud
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Australia/Sydney}
+    volumes:
+      - ${CONFIG_DIR:-./config}/nextcloud:/config
+      - ${CLOUD_DATA_DIR:-./data/cloud}:/data
+      - ${ARCHIVE_VAULT_DIR:-./data/archive}:/mnt/archive:ro
+    ports:
+      - "127.0.0.1:8443:443" # Bound to localhost for Zero-Trust VPN / Reverse Proxy ingress
+    restart: unless-stopped
+    networks:
+      - homelab_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kfsS https://localhost:443/status.php || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # 2. Primary Service: Network-Attached File Sharing (SMB / NAS)
+  # ---------------------------------------------------------------------------
+  samba:
+    image: dockurr/samba:latest
+    container_name: samba-nas
+    environment:
+      - TZ=${TZ:-Australia/Sydney}
+      - UID=${PUID:-1000}
+      - GID=${PGID:-1000}
+    volumes:
+      - ${CLOUD_DATA_DIR:-./data/cloud}:/storage/family-cloud
+      - ${ARCHIVE_VAULT_DIR:-./data/archive}:/storage/archive-vault:ro
+    ports:
+      - "127.0.0.1:445:445" # Accessible exclusively via encrypted private VPN / LAN interface
+    restart: unless-stopped
+    networks:
+      - homelab_net
+
+  # ---------------------------------------------------------------------------
+  # 3. Secondary Bonus Service: Local Media Streaming (Hardware-Accelerated)
+  # ---------------------------------------------------------------------------
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Australia/Sydney}
+    volumes:
+      - ${CONFIG_DIR:-./config}/jellyfin:/config
+      - ${MEDIA_DIR:-./media}/tv:/data/tvshows:ro
+      - ${MEDIA_DIR:-./media}/movies:/data/movies:ro
+    ports:
+      - "127.0.0.1:8096:8096"
+    devices:
+      - /dev/dri:/dev/dri # Intel QuickSync / VA-API Hardware Acceleration Passthrough
+    restart: unless-stopped
+    networks:
+      - homelab_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8096/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  homelab_net:
+    name: homelab_net
+    driver: bridge

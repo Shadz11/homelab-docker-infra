@@ -1,0 +1,26 @@
+name: Validate Docker Compose & Shell Scripts
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate-infra:
+    name: Docker Compose Config & ShellCheck Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml schema & interpolation
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Run ShellCheck on backup automation scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: "./scripts"
+          severity: style

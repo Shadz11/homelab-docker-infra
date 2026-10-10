@@ -1,0 +1,14 @@
+# Local environment secrets and host paths
+.env
+.env.*
+!.env.example
+
+# Runtime container state, databases, and media mounts
+config/
+media/
+backups/
+
+# OS / Editor files
+.DS_Store
+*.log
+*.tar.gz
